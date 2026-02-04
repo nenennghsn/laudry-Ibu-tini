@@ -1,0 +1,5 @@
+{
+  "name": "Laundry Ibu Tini App ",
+  "description": "Aplikasi manajemen Laundry lengkap dengan fitur pelanggan dan admin. Mencakup layanan harga, galeri, pelacakan transaksi, dan laporan pendapatan. Dibuat sebagai Web App responsif (PWA ready).",
+  "requestFramePermissions": []
+}
