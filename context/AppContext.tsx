@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { AppState, ServiceItem, GalleryItem, Transaction, UserRole } from '../types';
+import { getSupabaseClient, hasDbConfig } from '../utils/supabase';
 
 interface AppContextType extends AppState {
   setRole: (role: UserRole) => void;
@@ -12,6 +13,8 @@ interface AppContextType extends AppState {
   addPhoto: (photo: GalleryItem) => void;
   removePhoto: (id: string) => void;
   resetData: () => void;
+  isOnline: boolean;
+  syncData: () => Promise<void>;
 }
 
 const initialServices: ServiceItem[] = [
@@ -77,10 +80,9 @@ const initialTransactions: Transaction[] = [
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Initialize state from localStorage if available, else use defaults
-  // Defaulting to 'customer' so user must log in
   const [role, setRoleState] = useState<UserRole>(() => (localStorage.getItem('laundry_role') as UserRole) || 'customer');
-  
+  const [isOnline, setIsOnline] = useState(hasDbConfig());
+
   const [services, setServicesState] = useState<ServiceItem[]>(() => {
     const saved = localStorage.getItem('laundry_services');
     return saved ? JSON.parse(saved) : initialServices;
@@ -96,7 +98,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return saved ? JSON.parse(saved) : initialTransactions;
   });
 
-  // Persistence Effects
+  // DB Sync Helper
+  const syncData = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    try {
+      const { data: sData } = await supabase.from('services').select('*');
+      if (sData && sData.length > 0) setServicesState(sData);
+
+      const { data: tData } = await supabase.from('transactions').select('*').order('date', { ascending: false });
+      if (tData && tData.length > 0) setTransactionsState(tData);
+
+      const { data: gData } = await supabase.from('gallery').select('*');
+      if (gData && gData.length > 0) setGalleryState(gData);
+      
+      setIsOnline(true);
+    } catch (error) {
+      console.error("Sync failed:", error);
+      setIsOnline(false);
+    }
+  };
+
+  // Initial Sync
+  useEffect(() => {
+    if (hasDbConfig()) {
+      syncData();
+    }
+  }, []);
+
+  // Persistence Effects (Local Mirror)
   useEffect(() => localStorage.setItem('laundry_role', role), [role]);
   useEffect(() => localStorage.setItem('laundry_services', JSON.stringify(services)), [services]);
   useEffect(() => localStorage.setItem('laundry_gallery', JSON.stringify(gallery)), [gallery]);
@@ -104,35 +135,64 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const setRole = (r: UserRole) => setRoleState(r);
 
-  const addService = (service: ServiceItem) => setServicesState([...services, service]);
-  const updateService = (id: string, updates: Partial<ServiceItem>) => {
-    setServicesState(services.map(s => s.id === id ? { ...s, ...updates } : s));
+  const addService = async (service: ServiceItem) => {
+    setServicesState(prev => [...prev, service]);
+    const supabase = getSupabaseClient();
+    if (supabase) await supabase.from('services').insert([service]);
   };
 
-  const addTransaction = (transaction: Transaction) => setTransactionsState([transaction, ...transactions]);
+  const updateService = async (id: string, updates: Partial<ServiceItem>) => {
+    setServicesState(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    const supabase = getSupabaseClient();
+    if (supabase) await supabase.from('services').update(updates).eq('id', id);
+  };
+
+  const addTransaction = async (transaction: Transaction) => {
+    setTransactionsState(prev => [transaction, ...prev]);
+    const supabase = getSupabaseClient();
+    if (supabase) await supabase.from('transactions').insert([transaction]);
+  };
   
-  const editTransaction = (id: string, updates: Partial<Transaction>) => {
-    setTransactionsState(transactions.map(t => t.id === id ? { ...t, ...updates } : t));
+  const editTransaction = async (id: string, updates: Partial<Transaction>) => {
+    setTransactionsState(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    const supabase = getSupabaseClient();
+    if (supabase) await supabase.from('transactions').update(updates).eq('id', id);
   };
 
-  const removeTransaction = (id: string) => {
-    setTransactionsState(transactions.filter(t => t.id !== id));
+  const removeTransaction = async (id: string) => {
+    setTransactionsState(prev => prev.filter(t => t.id !== id));
+    const supabase = getSupabaseClient();
+    if (supabase) await supabase.from('transactions').delete().eq('id', id);
   };
 
-  const updateTransactionStatus = (id: string, status: Transaction['status']) => {
-    setTransactionsState(transactions.map(t => t.id === id ? { ...t, status } : t));
+  const updateTransactionStatus = async (id: string, status: Transaction['status']) => {
+    setTransactionsState(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    const supabase = getSupabaseClient();
+    if (supabase) await supabase.from('transactions').update({ status }).eq('id', id);
   };
 
-  const addPhoto = (photo: GalleryItem) => setGalleryState([photo, ...gallery]);
-  const removePhoto = (id: string) => setGalleryState(gallery.filter(g => g.id !== id));
+  const addPhoto = async (photo: GalleryItem) => {
+    setGalleryState(prev => [photo, ...prev]);
+    const supabase = getSupabaseClient();
+    if (supabase) await supabase.from('gallery').insert([photo]);
+  };
+
+  const removePhoto = async (id: string) => {
+    setGalleryState(prev => prev.filter(g => g.id !== id));
+    const supabase = getSupabaseClient();
+    if (supabase) await supabase.from('gallery').delete().eq('id', id);
+  };
 
   const resetData = () => {
-    if (window.confirm('Apakah Anda yakin ingin mereset semua data aplikasi ke kondisi awal? Data transaksi yang dibuat akan hilang.')) {
+    if (window.confirm('Reset data lokal? Jika terhubung DB, data DB tidak akan dihapus otomatis (aman).')) {
       setServicesState(initialServices);
       setGalleryState(initialGallery);
       setTransactionsState(initialTransactions);
       setRoleState('customer'); 
-      localStorage.clear();
+      localStorage.removeItem('laundry_services');
+      localStorage.removeItem('laundry_gallery');
+      localStorage.removeItem('laundry_transactions');
+      // Do not clear DB config or Role to avoid frustration
       window.location.reload();
     }
   };
@@ -143,7 +203,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       services, addService, updateService,
       gallery, addPhoto, removePhoto,
       transactions, addTransaction, editTransaction, removeTransaction, updateTransactionStatus,
-      resetData
+      resetData,
+      isOnline,
+      syncData
     }}>
       {children}
     </AppContext.Provider>

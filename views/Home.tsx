@@ -1,21 +1,25 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Settings, User, LogOut, RefreshCw, Lock, ArrowRight } from 'lucide-react';
+import { User, LogOut, Lock, ArrowRight, Cloud, WifiOff } from 'lucide-react';
 
 interface HomeProps {
   setView: (view: string) => void;
 }
 
 const Home: React.FC<HomeProps> = ({ setView }) => {
-  const { role, setRole, resetData } = useApp();
+  const { role, setRole, resetData, isOnline, syncData } = useApp();
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  // const [isDbModalOpen, setIsDbModalOpen] = useState(false); // Hidden feature
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  // DB Form (Hidden functionality)
+  const [dbUrl, setDbUrl] = useState(localStorage.getItem('supabase_url') || '');
+  const [dbKey, setDbKey] = useState(localStorage.getItem('supabase_key') || '');
 
   const toggleRole = () => {
     if (role === 'admin') {
       setRole('customer');
-      // No need to redirect if going back to customer on home
     } else {
       setIsLoginOpen(true);
       setError('');
@@ -24,14 +28,24 @@ const Home: React.FC<HomeProps> = ({ setView }) => {
   };
 
   const handleLogin = () => {
-    if (password === '123456') { // Hardcoded Password
+    if (password === '123456') {
       setRole('admin');
       setIsLoginOpen(false);
-      setView('transactions'); // Redirect admin to transactions immediately
+      setView('transactions');
     } else {
       setError('Password salah!');
     }
   };
+
+  /* Hidden handlers
+  const handleSaveDb = () => {
+    localStorage.setItem('supabase_url', dbUrl);
+    localStorage.setItem('supabase_key', dbKey);
+    setIsDbModalOpen(false);
+    alert('Konfigurasi tersimpan! Aplikasi akan mencoba sinkronisasi.');
+    syncData();
+  };
+  */
 
   const handleMainAction = () => {
     if (role === 'admin') {
@@ -47,11 +61,16 @@ const Home: React.FC<HomeProps> = ({ setView }) => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Cucian Nih</h1>
-          <p className="text-sm text-gray-500">Aplikasi Laundry Online</p>
+          <div className="flex items-center gap-1.5 mt-1">
+             <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+             <p className="text-xs text-gray-500">{isOnline ? 'Online' : 'Offline Mode'}</p>
+          </div>
         </div>
-        <div className="bg-blue-100 p-2 rounded-full text-blue-600">
+        {/* Settings Button Removed/Hidden 
+        <button onClick={() => setIsDbModalOpen(true)} className="bg-blue-50 p-2 rounded-full text-blue-600">
           <Settings size={20} />
-        </div>
+        </button>
+        */}
       </div>
 
       {/* Welcome Banner */}
@@ -138,20 +157,7 @@ const Home: React.FC<HomeProps> = ({ setView }) => {
              <ArrowRight size={16} className="text-gray-400" />
            </button>
 
-           <button 
-            onClick={resetData}
-            className="w-full flex items-center justify-between p-3 bg-white rounded-lg shadow-sm border border-red-100 active:bg-red-50"
-           >
-             <div className="flex items-center gap-3">
-               <div className="bg-red-50 p-2 rounded-full">
-                  <RefreshCw size={18} className="text-red-600" />
-               </div>
-               <div className="text-left">
-                 <p className="text-sm font-semibold text-gray-900">Reset Data</p>
-                 <p className="text-xs text-gray-500">Hapus semua data & kembali ke awal</p>
-               </div>
-             </div>
-           </button>
+           {/* Database and Reset Data buttons hidden as requested */}
          </div>
       </div>
 
@@ -193,6 +199,8 @@ const Home: React.FC<HomeProps> = ({ setView }) => {
           </div>
         </div>
       )}
+
+      {/* Database Modal removed from view */}
     </div>
   );
 };
